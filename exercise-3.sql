@@ -54,8 +54,10 @@ GROUP BY department_id,job_id;
 -- 7.Display the employee count in each department and also in the same result.  
 -- Info: * the total employee count categorized as "Total"
 -- • the null department count categorized as "-" *
-SELECT coalesce(department_id,'0') as department_id, count(department_id) as employee_count from employees
-GROUP BY department_id;
+SELECT coalesce(cast(department_id as string),'-') as department_id, count(employee_id) as employee_count
+FROM employees GROUP BY department_id
+UNION SELECT 'Total',count(employee_id) FROM employees
+ORDER BY department_id;
 
 -- 8.Display the jobs held and the employee count. 
 -- Hint: every employee is part of at least 1 job 
@@ -64,19 +66,20 @@ GROUP BY department_id;
 -- JobsHeld EmpCount
 -- 1	100
 -- 2	4
-SELECT employee_id,count(employee_id) as job_count FROM employee t1 GROUP BY employee_id
-RIGHT OUTER JOIN
-SELECT employee_id,count(employee_id) as job_count FROM job_history t2 GROUP BY employee_id 
-ON t1.employee_id=t2.employee_id
-ORDER BY employee_id;
+SELECT jobs_held, count(s1.employee_id) as employee_count FROM
+(SELECT t1.employee_id,count(t1.employee_id) as jobs_held FROM employee t1
+LEFT OUTER JOIN job_history  t2 
+ON t1.employee_id=t2.employee_id 
+GROUP BY t1.employee_id) s1
+GROUP BY s1.jobs_held;
 
 -- 9.Display average salary by department and country.
 SELECT c.country_name,d.department_id,avg(e.salary) FROM employee e 
 JOIN departments d ON e.department_id = d.department_id
 JOIN locations l ON d.location_id = l.location_id
 JOIN countries c ON l.country_id = c.country_id
-GROUP BY c.country_name,d.department_id
-ORDER BY c.country_name;
+GROUP BY d.department_id,c.country_name
+ORDER BY d.department_id;
 
 -- 10.	Display manager names and the number of employees reporting to them by countries
 -- (each employee works for only one department, and each department belongs to a country)
@@ -119,14 +122,20 @@ GROUP BY c.country_name;
 -- 10            22               -            -
 -- 40             -                 34         -
 -- (Please put "-" instead of leaving it NULL or Empty)
-
-SELECT r.region_name, d.department_id, count(*) as employee_count
+SELECT e.department_id,
+coalesce(nullif(cast(count(case when region_name = 'Europe' then 1 end) as string),'0'),'-') as europe,
+coalesce(nullif(cast(count(case when region_name = 'Americas' then 1 end) as string),'0'),'-') as "Americas",
+coalesce(nullif(cast(count(case when region_name = 'Asia' then 1 end) as string),'0'),'-') as "Asia",
+coalesce(nullif(cast(count(case when region_name = 'Middle East and Africa' then 1 end ) as string),'0'),'-') AS "Middle East and Africa"
 FROM employee e
 JOIN departments d ON e.department_id=d.department_id
 JOIN locations l ON d.location_id=l.location_id
 JOIN countries c ON l.country_id=c.country_id
 JOIN regions r ON c.region_id=r.region_id
-GROUP BY r.region_id,r.region_name,d.department_id;
+GROUP BY e.department_id HAVING count(e.employee_id)>0
+ORDER BY e.department_id ;
+
+-- iff(europe>0,cast(europe as string),'-') as europe_count,
 
 -- 14.Select the list of all employees who work either for one or more departments
 -- or have not yet joined / allocated to any department
@@ -138,7 +147,7 @@ GROUP BY employee_id,department_id;
 -- Return the first name, last name of the employees and their managers
 SELECT e1.first_name,e1.last_name, concat(e2.first_name,' ',e2.last_name) as manager_name
 FROM employee e1 
-JOIN employee e2 on e1.manager_id = e2.employee_id;
+LEFT OUTER JOIN employee e2 on e1.manager_id = e2.employee_id;
 
 -- 16.write a SQL query to display the department name, city, and state province for each department.
 SELECT d.department_name,l.city,l.state_province FROM departments d
@@ -182,15 +191,17 @@ JOIN locations l ON d.location_id = l.location_id
 WHERE l.city = 'Oxford' AND substr(e.last_name, -2, 1) = 'e' AND d.department_name NOT IN ('Shipping','Finance');
 
 -- 22.Display the first name and phone number of employees who have less than 50 months of experience
-SELECT first_name, last_name, phone_number FROM employee
-WHERE DATEDIFF(month,hire_date,CURRENT_DATE) < 50;
+SELECT employee_id,sum(datediff('month',start_date,end_date)) as experience FROM job_history
+GROUP BY employee_id HAVING experience < 50;
 
 -- 23.Display Employee id, first_name, last name, hire_date and salary for employees
 -- who has the highest salary for each hiring year.(For eg: John and Deepika joined on year 2023,
 -- and john has a salary of 5000, and Deepika has a salary of 6500.
 -- Output should show Deepika’s details only).
-SELECT e1.employee_id, e1.first_name, e1.last_name, e1.hire_date, e1.salary 
-FROM employee e1
-JOIN (SELECT year(hire_date) as join_year,max(salary) as max_salary
-FROM employee GROUP BY join_year) e2
-ON year(e1.hire_date) = e2.join_year AND e1.salary = e2.max_salary;
+SELECT employee_id, first_name, last_name, hire_date, salary
+FROM (SELECT *, year(hire_date) as join_year,
+row_number() OVER (PARTITION BY join_year ORDER BY salary DESC) as rn
+FROM employees)
+WHERE rn=1 ORDER BY join_year;
+
+
